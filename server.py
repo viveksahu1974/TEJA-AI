@@ -1,6 +1,5 @@
-"""TEJA AI v2.1 - local multi-provider web server.
-Supports OpenAI, Gemini, Claude, DeepSeek, optional Google Custom Search,
-and local demo mode fallback.
+"""TEJA AI v2.2 - local Ollama + optional cloud models.
+Offline AI through a local Ollama service, with optional cloud APIs.
 """
 import ast
 import base64
@@ -8,6 +7,7 @@ import json
 import mimetypes
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +19,12 @@ HOST = os.getenv('HOST', '127.0.0.1')
 PORT = int(os.getenv('PORT', '8000'))
 
 PROVIDERS = {
+    'ollama': {
+        'label': 'TEJA Local (Ollama)',
+        'env': None,
+        'model_env': 'OLLAMA_MODEL',
+        'default_model': 'qwen2.5:3b',
+    },
     'openai': {
         'label': 'ChatGPT',
         'env': 'OPENAI_API_KEY',
@@ -64,16 +70,15 @@ MODE_PROMPTS = {
 
 
 # TEJA AI Smart is a routing option, NOT a newly trained independent model.
-# It chooses from providers with configured API keys; if none is configured,
-# TEJA AI remains in clearly labelled Demo Mode.
+# Prefer the local Ollama engine so no cloud API credits are needed when it is available.
 SMART_PREFERENCES = {
-    'teja': ('openai', 'gemini', 'claude', 'deepseek'),
-    'general': ('openai', 'gemini', 'claude', 'deepseek'),
-    'study': ('gemini', 'openai', 'claude', 'deepseek'),
-    'code': ('deepseek', 'openai', 'claude', 'gemini'),
-    'write': ('claude', 'openai', 'gemini', 'deepseek'),
-    'translate': ('gemini', 'openai', 'claude', 'deepseek'),
-    'ideas': ('openai', 'gemini', 'claude', 'deepseek'),
+    'teja': ('ollama', 'openai', 'gemini', 'claude', 'deepseek'),
+    'general': ('ollama', 'openai', 'gemini', 'claude', 'deepseek'),
+    'study': ('ollama', 'gemini', 'openai', 'claude', 'deepseek'),
+    'code': ('ollama', 'deepseek', 'openai', 'claude', 'gemini'),
+    'write': ('ollama', 'claude', 'openai', 'gemini', 'deepseek'),
+    'translate': ('ollama', 'gemini', 'openai', 'claude', 'deepseek'),
+    'ideas': ('ollama', 'openai', 'gemini', 'claude', 'deepseek'),
 }
 
 
@@ -92,15 +97,39 @@ def all_provider_status():
     status['teja'] = {
         'ready': chosen is not None,
         'label': 'TEJA AI Smart',
-        'model': f'Auto via {PROVIDERS[chosen]["label"]}' if chosen else 'Demo (add an API key)',
+        'model': f'Auto via {PROVIDERS[chosen]["label"]} ({provider_model(chosen)})' if chosen else 'Demo (install Ollama + model)',
         'via': chosen,
     }
     return status
 
 
+# A short-lived cache avoids repeated polling when the UI requests status.
+_ollama_check = {'at': 0.0, 'ready': False}
+
+
+def ollama_ready() -> bool:
+    now = time.monotonic()
+    if now - _ollama_check['at'] < 4:
+        return _ollama_check['ready']
+    url = 'http://127.0.0.1:11434/api/tags'
+    ready = False
+    try:
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            data = json.load(resp)
+        target = provider_model('ollama')
+        names = {m.get('name') for m in data.get('models', [])}
+        ready = target in names or (':' not in target and target + ':latest' in names)
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
+        pass
+    _ollama_check.update({'at': now, 'ready': ready})
+    return ready
+
+
 def provider_ready(name: str) -> bool:
+    if name == 'ollama':
+        return ollama_ready()
     cfg = PROVIDERS.get(name)
-    return bool(cfg and os.getenv(cfg['env'], '').strip())
+    return bool(cfg and cfg.get('env') and os.getenv(cfg['env'], '').strip())
 
 
 def provider_model(name: str) -> str:
@@ -172,8 +201,8 @@ def offline_answer(question, mode, provider='openai'):
     return (
         f'**TEJA AI — Demo Mode ({label})** ✨\n\n' + tips.get(mode, tips['general']) +
         '\n\nYour message: **' + q[:280].replace('*', '') + '**\n\n' +
-        'This is a local preview, **not a real AI-generated answer**. Configure the provider API key on the server to enable real replies. '
-        'You can still test the offline calculator with `25 * (8 + 2)`.'
+        'This is a local preview, **not a real AI-generated answer**. To use TEJA offline, install Ollama from https://ollama.com/download/windows, then run `ollama pull qwen2.5:3b`. '
+        'Refresh the page and choose TEJA AI Smart or TEJA Local (Ollama). No paid OpenAI credits required.'
     )
 
 
@@ -377,6 +406,41 @@ def call_deepseek(history, instructions):
         return {'error': 'Could not reach the DeepSeek API.'}
 
 
+def call_ollama(history, instructions, image_info=None):
+    """Call only a local loopback Ollama instance: no keys or remote endpoint."""
+    model = provider_model('ollama')
+    messages = [{'role': 'system', 'content': instructions}] + [dict(m) for m in history]
+    if image_info:
+        return {'error': 'The selected qwen2.5:3b model is text-only. For image questions, switch to a provider with image support.'}
+    request_body = json.dumps({
+        'model': model,
+        'messages': messages,
+        'stream': False,
+        'options': {'num_predict': 1200, 'num_ctx': 4096},
+    }, ensure_ascii=False).encode('utf-8')
+    request = urllib.request.Request(
+        'http://127.0.0.1:11434/api/chat',
+        data=request_body,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=240) as response:
+            data = json.load(response)
+        reply = data.get('message', {}).get('content', '').strip()
+        return {'reply': reply or 'The local model returned no text.', 'model': model}
+    except urllib.error.HTTPError as exc:
+        try:
+            info = json.loads(exc.read().decode('utf-8')).get('error', 'Local model error')
+        except Exception:
+            info = 'Local model error'
+        return {'error': f'Ollama error ({exc.code}): {str(info)[:300]}'}
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return {'error': 'Cannot reach Ollama at http://127.0.0.1:11434. Start Ollama, run `ollama pull qwen2.5:3b`, and retry.'}
+    except (ValueError, TypeError):
+        return {'error': 'Ollama returned an unexpected response.'}
+
+
 def ask_ai(messages, mode, provider='openai', web_search=False, image=None):
     requested_provider = provider if provider in (*PROVIDERS, 'teja') else 'teja'
     smart = requested_provider == 'teja'
@@ -404,7 +468,9 @@ def ask_ai(messages, mode, provider='openai', web_search=False, image=None):
             'search_note': search_note,
         }
 
-    if provider == 'openai':
+    if provider == 'ollama':
+        result = call_ollama(history, instructions, image_info)
+    elif provider == 'openai':
         result = call_openai(history, instructions, image_info)
     elif provider == 'gemini':
         result = call_gemini(history, instructions, image_info)
@@ -479,6 +545,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     live = [cfg['label'] for name, cfg in PROVIDERS.items() if provider_ready(name)]
-    print(f'TEJA AI v2.1 running at http://{HOST}:{PORT}', flush=True)
-    print('Connected providers: ' + (', '.join(live) if live else 'Demo only'), flush=True)
+    print(f'TEJA AI v2.2 running at http://{HOST}:{PORT}', flush=True)
+    print('Connected providers: ' + (', '.join(live) if live else 'Demo only (Ollama not ready)'), flush=True)
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

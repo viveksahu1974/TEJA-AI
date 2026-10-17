@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>TEJA AI — Smart Multi-Model Assistant</title>
+  <title>TEJA AI — Smart + Free Local AI Assistant</title>
   <meta name="theme-color" content="#080b15">
   <meta name="description" content="TEJA AI — multi-model assistant with ChatGPT, Gemini, Claude, DeepSeek, voice tools, and optional Google search.">
   <link rel="icon" type="image/png" href="./favicon.png">
@@ -52,7 +52,8 @@
         <div class="topControls">
           <label class="miniControl">Model
             <select id="providerSel">
-              <option value="teja">🐺 TEJA AI Smart</option>
+              <option value="teja">🐺 TEJA AI Smart (auto)</option>
+              <option value="ollama">🖥️ TEJA Local (Ollama)</option>
               <option value="openai">ChatGPT</option>
               <option value="gemini">Gemini</option>
               <option value="claude">Claude</option>
@@ -62,7 +63,7 @@
           <label class="miniCheck"><input type="checkbox" id="webSearch"> Google Search</label>
           <button id="speakToggle" class="toolbtn" title="Auto-speak replies">🔊</button>
         </div>
-        <span class="pill" id="versionPill">🐺 TEJA 2.1</span>
+        <span class="pill" id="versionPill">🐺 TEJA 2.2</span>
         <button id="clear" class="iconbtn" title="Clear current chat">↻</button>
       </div>
     </header>
@@ -77,7 +78,7 @@
         <div class="orb logo-glow"><img src="./teja-icon.png" alt="TEJA AI wolf logo"></div>
         <div class="eyebrow">MULTI-MODEL PERSONAL AI</div>
         <h1>Meet <em>TEJA AI.</em><br>Your multi-brain super assistant.</h1>
-        <p>Choose TEJA AI Smart to automatically use an available connected model, or select ChatGPT, Gemini, Claude, or DeepSeek yourself. Add voice, optional Google search, and switch workspaces for study, coding, writing, translation, and ideation.</p>
+        <p>Use TEJA AI Smart with Ollama to chat locally without paid API credits. You can also choose ChatGPT, Gemini, Claude, or DeepSeek if you configure their keys. Add voice, optional Google search, and switch workspaces for study, coding, writing, translation, and ideation.</p>
         <div class="suggestions">
           <button data-prompt="Explain the OSI model in simple exam-friendly English with a diagram">📚 <span><strong>Learn something</strong><small>Make any topic simple</small></span>↗</button>
           <button data-prompt="Create a Python project idea for a cybersecurity final-year student">💻 <span><strong>Build with code</strong><small>From ideas to solutions</small></span>↗</button>

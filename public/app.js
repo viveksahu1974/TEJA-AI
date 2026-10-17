@@ -6,7 +6,7 @@ const modeNames = {
   teja:'TEJA AI Mode', general:'All-rounder AI', study:'Study & Learning', code:'Code Assistant',
   write:'Writing Studio', translate:'Translator', ideas:'Idea Lab'
 };
-const providerNames = {teja:'TEJA AI Smart', openai:'ChatGPT', gemini:'Gemini', claude:'Claude', deepseek:'DeepSeek'};
+const providerNames = {teja:'TEJA AI Smart', ollama:'TEJA Local (Ollama)', openai:'ChatGPT', gemini:'Gemini', claude:'Claude', deepseek:'DeepSeek'};
 let mode = 'teja', chats = [], active = '', attachment = null, busy = false;
 let provider = localStorage.getItem('teja_provider') || 'teja';
 let autoSpeak = localStorage.getItem('teja_speak') === '1';
@@ -25,7 +25,7 @@ function updateStatusBar(){
   const ready = !!(statusInfo?.providers?.[provider]?.ready);
   $('statusDot').classList.toggle('live', ready);
   $('statusText').textContent = ready ? `${p} connected` : `${p} demo mode`;
-  let extra = ready ? (statusInfo.providers[provider].model || '') : (provider === 'teja' ? 'Connect any one API key for live replies' : `Set ${provider.toUpperCase()} API key`);
+  let extra = ready ? (statusInfo.providers[provider].model || '') : (['teja','ollama'].includes(provider) ? 'Install Ollama + ollama pull qwen2.5:3b' : `Set ${provider.toUpperCase()} API key`);
   if(webSearch) extra += statusInfo?.google_search ? ' · Google search ready' : ' · Google search not configured';
   $('statusSub').textContent = extra;
   $('versionPill').textContent = `${ready ? '⚡' : '🐺'} ${p}`;
