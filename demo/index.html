@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TEJA AI — Interactive Browser Demo</title>
+  <meta name="theme-color" content="#080b15">
+  <meta name="description" content="TEJA AI — multi-model assistant with ChatGPT, Gemini, Claude, DeepSeek, voice tools, and optional Google search.">
+  <link rel="icon" type="image/png" href="./favicon.png">
+  <link rel="stylesheet" href="./style.css">
+<style>
+.public-demo-banner{background:linear-gradient(90deg,#3a2377,#1c4f82);color:#fff;text-align:center;padding:9px 18px;font:13px/1.5 system-ui,Arial,sans-serif;position:relative;z-index:999;}
+.public-demo-banner strong{font-size:12px;letter-spacing:.06em;color:#fff1a7;}
+</style>
+</head>
+<body>
+<div class="public-demo-banner" role="status">
+  <strong>LIVE UI PREVIEW · DEMO ONLY</strong> — Try chat, modes, history & browser voice. Replies are sample responses, not AI-generated. For real AI, run TEJA with Ollama or configure a protected backend.
+</div>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brandmark animated-logo"><img src="./teja-icon.png" alt="TEJA AI wolf logo"></div>
+      <div>
+        <strong>TEJA <span>AI</span></strong>
+        <small>YOUR INTELLIGENT COMPANION</small>
+        <div class="creatorCredit" aria-label="TEJA AI developer: VIVEK SAHU"><span class="creatorLabel">DEVELOPER</span><span class="creatorName">VIVEK SAHU</span></div>
+      </div>
+    </div>
+    <button id="newChat" class="new"><span>＋</span> New conversation</button>
+    <div class="sideheading">WORKSPACES</div>
+    <div class="modes" id="modes">
+      <button data-mode="teja" class="selected">🐺 <span>TEJA AI Mode</span></button>
+      <button data-mode="general">✧ <span>All-rounder</span></button>
+      <button data-mode="study">▤ <span>Study & Learning</span></button>
+      <button data-mode="code">⌘ <span>Code Assistant</span></button>
+      <button data-mode="write">✎ <span>Writing Studio</span></button>
+      <button data-mode="translate">◎ <span>Translator</span></button>
+      <button data-mode="ideas">✹ <span>Idea Lab</span></button>
+    </div>
+    <div class="sideheading historytitle">CHAT HISTORY <span id="historyCount"></span></div>
+    <div class="historyTools"><button id="exportHistory" title="Download your conversations">⬇ Backup</button><button id="clearHistory" title="Delete all conversations">🗑 Clear all</button></div>
+    <div id="history" class="history"></div>
+    <div id="historyStatus" class="historyStatus" role="status" aria-live="polite">Loading history…</div>
+    <div class="sidebarBottom">
+      <div class="statusDot" id="statusDot"></div>
+      <div>
+        <strong id="statusText">Checking connection…</strong>
+        <small id="statusSub">TEJA AI local edition</small>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header>
+      <button class="hamburger" id="toggle" aria-label="Toggle sidebar">☰</button>
+      <div class="headerTitle">
+        <span id="activeLabel">TEJA AI Mode</span>
+        <small>One app. Many brains. Ask anything.</small>
+      </div>
+      <div class="right controlsWrap">
+        <div class="topControls">
+          <label class="miniControl">Model
+            <select id="providerSel">
+              <option value="teja">🐺 TEJA AI Smart (auto)</option>
+              <option value="ollama">🖥️ TEJA Local (Ollama)</option>
+              <option value="openai">ChatGPT</option>
+              <option value="gemini">Gemini</option>
+              <option value="claude">Claude</option>
+              <option value="deepseek">DeepSeek</option>
+            </select>
+          </label>
+          <label class="miniCheck"><input type="checkbox" id="webSearch"> Google Search</label>
+          <button id="speakToggle" class="toolbtn" title="Auto-speak replies">🔊</button>
+        </div>
+        <span class="pill" id="versionPill">🐺 TEJA LIVE DEMO</span>
+        <button id="clear" class="iconbtn" title="Clear current chat">↻</button>
+      </div>
+    </header>
+
+    <div class="voiceBar" aria-label="Multilingual speaking tools">
+      <label>🎙 Language <select id="langSel" title="Language for microphone and spoken replies">
+        <option value="auto">Auto-detect reply language</option>
+        <option value="en-IN">English (India)</option><option value="en-US">English (US)</option>
+        <option value="hi-IN">हिन्दी · Hindi / Hinglish</option>
+        <option value="bn-IN">বাংলা · Bengali</option><option value="ta-IN">தமிழ் · Tamil</option>
+        <option value="te-IN">తెలుగు · Telugu</option><option value="mr-IN">मराठी · Marathi</option>
+        <option value="gu-IN">ગુજરાતી · Gujarati</option><option value="kn-IN">ಕನ್ನಡ · Kannada</option>
+        <option value="ml-IN">മലയാളം · Malayalam</option><option value="pa-IN">ਪੰਜਾਬੀ · Punjabi</option>
+        <option value="ur-PK">اردو · Urdu</option><option value="or-IN">ଓଡ଼ିଆ · Odia</option>
+        <option value="ne-NP">नेपाली · Nepali</option><option value="ar-SA">العربية · Arabic</option>
+        <option value="es-ES">Español · Spanish</option><option value="fr-FR">Français · French</option>
+        <option value="de-DE">Deutsch · German</option><option value="pt-BR">Português · Portuguese</option>
+        <option value="ja-JP">日本語 · Japanese</option><option value="ko-KR">한국어 · Korean</option>
+        <option value="zh-CN">中文 · Chinese</option><option value="ru-RU">Русский · Russian</option>
+      </select></label>
+      <label>🔉 Engine <select id="ttsEngine" title="Online multilingual voice works independently of installed Windows voices"><option value="online">Multilingual online (Hindi + more)</option><option value="browser">Windows / Browser voice</option></select></label>
+      <label>Speaker <select id="ttsSpeaker" title="Online voice speaker"><option value="female">Female</option><option value="male">Male</option></select></label>
+      <label>🔊 Browser Voice <select id="voiceSel" title="Choose an available browser voice"><option value="">Automatic voice</option></select></label>
+      <label>Speed <select id="rateSel" title="Speaking speed"><option value="0.8">0.8×</option><option value="1">1×</option><option value="1.2">1.2×</option></select></label>
+      <button id="testVoice" class="toolbtn" title="Test the currently selected voice">▶ Test voice</button>
+      <button id="stopVoice" class="toolbtn" title="Stop speaking">⏹ Stop</button>
+      <small id="voiceStatus" role="status">Checking installed voices…</small>
+    </div>
+    <div id="setupNotice" class="setupNotice" hidden role="alert">
+      <strong>⚠ Open TEJA AI using its launcher</strong>
+      <span>Run <code>START_TEJA_AI.bat</code> from the extracted <code>teja-ai</code> folder (or <code>python server.py</code> in a terminal), then open <a href="http://127.0.0.1:8000/" target="_blank" rel="noopener noreferrer">http://127.0.0.1:8000/</a>.</span>
+    </div>
+
+    <section class="scroll" id="scroll">
+      <div class="welcome" id="welcome">
+        <div class="orb logo-glow"><img src="./teja-icon.png" alt="TEJA AI wolf logo"></div>
+        <div class="eyebrow">MULTI-MODEL PERSONAL AI</div>
+        <div class="welcomeCredit">CREATED BY <b>VIVEK SAHU</b></div>
+        <h1>Meet <em>TEJA AI.</em><br>Your multi-brain super assistant.</h1>
+        <p>Use TEJA AI Smart with Ollama to chat locally without paid API credits. You can also choose ChatGPT, Gemini, Claude, or DeepSeek if you configure their keys. Add voice, optional Google search, and switch workspaces for study, coding, writing, translation, and ideation.</p>
+        <div class="suggestions">
+          <button data-prompt="Explain the OSI model in simple exam-friendly English with a diagram">📚 <span><strong>Learn something</strong><small>Make any topic simple</small></span>↗</button>
+          <button data-prompt="Create a Python project idea for a cybersecurity final-year student">💻 <span><strong>Build with code</strong><small>From ideas to solutions</small></span>↗</button>
+          <button data-prompt="Write a professional internship application email">✍️ <span><strong>Write beautifully</strong><small>Emails, stories, and more</small></span>↗</button>
+          <button data-prompt="Give me 10 creative startup ideas using AI">💡 <span><strong>Spark new ideas</strong><small>Think beyond boundaries</small></span>↗</button>
+        </div>
+      </div>
+      <div class="messages" id="messages"></div>
+    </section>
+
+    <div class="composeArea">
+      <div class="attachment" id="attachment" hidden></div>
+      <div class="composer">
+        <button class="attach" id="attach" title="Attach .txt, .md, .csv, .json, or an image">＋</button>
+        <input id="file" type="file" accept=".txt,.md,.csv,.json,image/png,image/jpeg,image/webp" hidden>
+        <textarea id="input" rows="1" placeholder="Ask TEJA anything..." aria-label="Your message"></textarea>
+        <button class="mic" id="mic" title="Voice input">🎙</button>
+        <button class="send" id="send" title="Send message">➤</button>
+      </div>
+      <div class="disclaimer">TEJA can make mistakes. Verify important information. <span>Developed by VIVEK SAHU ✦</span></div>
+    </div>
+  </main>
+</div>
+<script src="./demo-shim.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

@@ -1,60 +1,138 @@
-# TEJA AI v2.2 — Free Local Mode + Multi-Model
+# TEJA AI v2.5 — Hindi & multilingual speaking fix
 
-This project is a local Python web app using **Ollama** for real AI answers from a local model, with optional OpenAI, Gemini, Claude, DeepSeek and Google Custom Search integrations. No paid API key is needed for the local option. **Ollama and model downloads are separate and NOT bundled in this ZIP.**
+The v2.4 Windows/Edge browser speech engine may pronounce English but fail for Hindi and other Indian languages. v2.5 adds an **optional independent online multilingual speech engine** using the Python `edge-tts` package. Your chat model can still run locally on Ollama, but **text being read aloud is sent to an external online speech service** when this engine is selected. It is not an offline voice solution and its availability depends on the service and network.
 
-## Your laptop: 16 GB RAM, Intel i5-1155G7, ~193 GB free storage
+## Quick install (Windows)
 
-Start with **qwen2.5:3b**, a ~1.9 GB model download; it typically runs on CPU within this hardware class. Larger 7B models may respond significantly more slowly on this CPU.
+1. Close TEJA AI's previous server (`Ctrl+C`), including other servers using port 8000.
+2. Extract this new ZIP. Open the extracted `teja-ai` folder.
+3. **Double-click `INSTALL_MULTILINGUAL_VOICE.bat`** to install the optional speech package. Keep the internet connected. If installation fails, open PowerShell in this folder and run `py -m pip install --user --upgrade edge-tts`.
+4. Start `START_TEJA_AI.bat` and open `http://127.0.0.1:8000/`. Press `Ctrl+F5` to reload.
+5. In the toolbar select **Engine → Multilingual online**, **Language → हिन्दी – Hindi / Hinglish**, **Speaker → Female** (or Male), and **Speed → 1×**.
+6. Click **▶ Test voice**. It should speak a short Hindi sample. Click **🔉 Listen** next to an AI reply to read it out loud. Enable the top-right 🔊 button for automatic speaking after every reply.
 
-## Setup — Windows 11
+**Tip:** For clear pronunciation, ask TEJA “हिन्दी में देवनागरी लिपि में उत्तर दो.” Romanized Hinglish can sound unnatural even with a Hindi voice. If English was previously selected, v2.5 detects clearly non-Latin scripts in replies and automatically picks the matching online voice. Use explicit Hindi for Romanized Hinglish.
 
-1. Install Ollama from **https://ollama.com/download/windows**.
-2. Open a **new PowerShell** window (not necessarily the project folder), then download the model:
+If your audio still fails, read the full text shown underneath the voice controls:
+- **“Install online voices”**: run the `INSTALL_MULTILINGUAL_VOICE.bat` and restart TEJA.
+- **“Online multilingual voice unavailable”**: check internet, try the install again, or switch to **Windows/browser voice** and install a supported Windows language voice.
+- **“Browser blocked audio”**: click `▶ Test voice` directly, unmute the browser tab and check Windows audio output.
+
+This method is best-effort and is **not guaranteed to work in every region or network**; the upstream online service can change. Installing `edge-tts` does not install offline voices. For fully offline Hindi speech, a separate local TTS model would need to be installed and configured.
+
+Your **local chat history remains at** `%LOCALAPPDATA%\TEJA-AI\history.sqlite3`, outside the extracted project directory. Keep your user profile/backup safe.
+
+---
+
+# TEJA AI 🐺 v2.4 — Speech playback troubleshooting + history
+
+**Update of the original TEJA AI v2.2 local Ollama assistant.** Includes Ollama, TEJA Smart Mode, optional OpenAI/Gemini/Claude/DeepSeek, optional Google Search, glowing wolf logo, and voice features. This version adds **persistent conversations** and more flexible speaking-language settings.
+
+## New in v2.4 — voice playback fix
+
+- **▶ Test voice** next to the voice controls — test playback without asking the AI another question.
+- Better diagnostics: if the browser fails speech synthesis, TEJA reports the **actual error category** (for example, `network`, `synthesis-failed`, `voice-unavailable`, or `not-allowed`).
+- When an **online voice** fails, TEJA tries other available voices of the **same language**, preferring installed/local voices, followed by browser automatic voice.
+- Long replies are spoken in shorter chunks to reduce failures with some Windows browser TTS engines.
+- Stop button cancels the current speech session and pending retries.
+- **Important**: No app can force a missing or broken Windows/browser speech engine to work. If all voices fail, fix Windows speech/audio settings or try an alternate browser/voice. Automatic fallback might sound different, especially without a local voice in the selected language.
+
+### If you see `Voice playback failed` on Microsoft Madhur Online (Natural)
+
+1. Click **Voice → Automatic voice**, set **Language → Hindi**, then click **▶ Test voice**.
+2. If it still fails, try a Hindi voice labelled **device** (if one exists). Otherwise try **English (India)** and an installed English voice to confirm audio is functioning.
+3. Check Windows volume, output device, and browser tab sound. If both languages fail, test the system speaker in **Settings → System → Sound**.
+4. To add a language, try **Windows Settings → Time & language → Language & region → Add a language → Hindi → Language options**. Speech/Text-to-speech resources depend on Windows edition, language, and voice availability.
+5. Restart Edge and TEJA after installing a voice. If an online voice fails, network access to the voice service may be blocked even though local TEJA/Ollama answers work.
+
+## What is fixed
+
+- **History persists across browser restarts, browser changes, and local port changes** (for the same computer/user account), because conversations are now saved to an on-device SQLite database, not only browser localStorage.
+- Chats are saved **as soon as you send a question**, and again when the answer arrives; this includes error or demo replies.
+- Older history from the *same browser origin* is automatically imported the first time the new version opens there. History from another browser/profile/port **cannot be automatically read from that browser**. To migrate old chats saved only in a browser, first open this updated version using the old address/browser to import it.
+- Click a chat under **CHAT HISTORY** to reopen it. Use **×** to delete one, **⬇ Backup** to export JSON, or **Clear all** to remove everything.
+- **Microphone**: click 🎙, speak, and send the transcribed text.
+- **Voice output**: click **🔊** in the top bar to automatically read replies; or click **🔉 Listen** next to any reply. Use **⏹ Stop** to stop playback.
+- **Languages**: use the *Language* drop-down in the voice toolbar, and choose an installed voice in *Voice*. Includes Hindi, English, Bengali, Tamil, Telugu, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Urdu, Odia, Nepali, Arabic, French, Spanish, German, Portuguese, Japanese, Korean, Chinese, Russian. **These are language preferences, not guaranteed voice packs**. Actual input/output language support depends on the browser and voice packs installed on Windows. With Auto, the script of the reply is detected; Roman-letter Hinglish usually needs an explicit Hindi selection.
+- **Speaking is not the same as understanding**: the Ollama/cloud model generates the answer as text and the browser reads it aloud. Language accuracy also depends on the model.
+
+## Start on Windows 11
+
+1. Shut down your previous TEJA AI server window (Ctrl+C). Old ports 8000/8001 must not be serving the older version.
+2. Extract the new ZIP into a new folder. Open the extracted **teja-ai** folder where `server.py` and `START_TEJA_AI.bat` are located.
+3. Double-click `START_TEJA_AI.bat`. Keep the server command window open.
+4. Open `http://127.0.0.1:8000/` and press **Ctrl+F5** to hard-refresh if you previously used TEJA AI at this address.
+5. Ask **Hello TEJA AI**. You should see a new item under **CHAT HISTORY**, with `✓ Saved on this device` below it. Refresh the page to verify that it stays.
+6. Set **Language → Hindi**, click **🔊** to enable automatic speech, or click **🔉 Listen** next to a completed answer.
+
+**Note**: If the system reports port 8000 already in use, close other `server.py` windows. Otherwise, use PowerShell inside the new teja-ai folder:
+
+```powershell
+$env:PORT = '8001'
+py server.py
+```
+
+Then open `http://127.0.0.1:8001/` (same port as the running server).
+
+## Local AI with no API bill
+
+If not installed yet:
+
+1. Install Ollama from https://ollama.com/download/windows
+2. Run in PowerShell:
    ```powershell
    ollama pull qwen2.5:3b
-   ```
-3. Test local AI directly:
-   ```powershell
    ollama run qwen2.5:3b
    ```
-   Ask **Hello TEJA**, then type `/bye` to exit the chat. Ollama should continue running in the background (its tray icon may appear). If Ollama is not running, use `ollama serve` in a separate terminal. If it says address already in use, the Ollama service is already running; do not start a second instance.
-4. Stop any older TEJA server first (Ctrl+C in the server terminal).
-5. Extract this ZIP into a new folder, go inside `teja-ai`, double click **START_TEJA_AI.bat**.
-6. Open **http://127.0.0.1:8000/**. In the dropdown select **TEJA Local (Ollama)**, or **TEJA AI Smart** (now prefers the local model when available). Turn **Google Search OFF** for fully local text chat.
-7. Send **Hello TEJA** or **Explain C programming in simple English**.
+3. TEJA AI dropdown → **TEJA Local (Ollama)** or **TEJA AI Smart**. Smart mode prefers local Ollama when available.
+4. **Google Search OFF** for local-only text chats.
 
-### Status check
-Open **http://127.0.0.1:8000/api/status**. Under `providers.ollama`, `ready` should be `true`, and `providers.teja.via` should be `ollama` for auto-mode. `ready` only means the service has the selected model installed; the first answer may take some time to load on CPU.
+Ollama model download is separate from this ZIP. See `http://127.0.0.1:8000/api/status` for model connection status.
 
-### If no replies appear
-- Make sure Ollama is installed and running, and `ollama list` includes `qwen2.5:3b`.
-- Test Ollama independently via `ollama run qwen2.5:3b`.
-- Stop the old TEJA server on port 8000 or use `$env:PORT='8001'; py server.py` from the project folder. Then open the **same port** in your browser.
-- Refresh the TEJA page with Ctrl+F5. Choose TEJA Local manually if TEJA Smart routes to OpenAI and shows no-credits errors.
-- Keep your TEJA server window open.
+## Where history is saved
 
-## Other features
-- TEJA AI Smart prefers local Ollama over cloud models, then falls back to whichever configured provider is available.
-- Voice input uses browser speech recognition, which may require an internet connection. Voice playback uses browser speech synthesis. Offline voice operation is **not** guaranteed.
-- Google Search requires separate Google CSE credentials and an internet connection. It is optional and not needed for basic local AI answers.
-- The Qwen2.5:3b model is **text only**: local image recognition is not supported by this model.
-- With OpenAI/Gemini/Claude/DeepSeek manually selected, usage and billing rules of that provider still apply.
-- The project uses your original wolf logo and glow/lighting animations.
-- This is a **local** project. Keep port 8000 bound to 127.0.0.1; do not expose it publicly without securing it.
-- Local model does not have built-in live internet knowledge. Chat content sent to local Ollama normally stays on your computer, but browser voice recognition services may process audio online.
+Windows: `%LOCALAPPDATA%\TEJA-AI\history.sqlite3` (for example under `AppData\Local\TEJA-AI`).
 
-## Privacy and licensing
-- Browser chat history is stored locally in `localStorage`. Do not input passwords or secrets into chats.
-- Qwen2.5 3B uses a model-specific license; check its terms before commercial distribution.
-- Never paste secret API keys into the TEJA frontend or publish them to GitHub.
+macOS/Linux: `~/.local/share/TEJA-AI/history.sqlite3` unless `XDG_DATA_HOME` is set.
+
+The database stays in the same location even when you replace the project ZIP/folder or use another browser. Back up with **⬇ Backup**. This history is **plain local data, not encrypted**, and everyone with access to your computer user account can read it. Do not store secrets or API keys in chat history.
+
+Older versions used browser localStorage only. Old history still in browser storage can only migrate from the browser and exact origin where it was originally saved (scheme + hostname + port). For example, Edge `127.0.0.1:8000` and Chrome `127.0.0.1:8000` are different browser storage areas. If browser storage was cleared, old chats may be unrecoverable.
+
+## Voice availability
+
+- Browser-based `speechSynthesis` voices depend on installed OS/browser voices. To install languages/voices, check **Windows Settings → Time & language → Speech / Language & region**. Availability varies by Windows edition, pack, and language.
+- Browser `SpeechRecognition` is not available everywhere, and may transmit audio to browser/cloud speech services; voice recognition is **not guaranteed offline**.
+- Some languages may not have compatible voices installed; TEJA shows a warning. For unsupported languages, audio may be silent or use a fallback voice.
+- For multilingual output, ask the AI **“Answer in Hindi (Devanagari)”**, etc., and choose the same language in TEJA's voice toolbar.
+- TEJA uses text-to-speech playback, **not** a full real-time voice conversation model.
+
+## Other notes
+
+- Chat contents are sent to the selected provider for processing unless using local Ollama.
+- Google Search is optional and requires separate Google Custom Search credentials.
+- OpenAI API credits and ChatGPT subscription are billed separately.
+- This is for a **local personal machine**, not a production/public server. Do not expose the backend to the public Internet without authentication, HTTPS, quotas, and security reviews.
+- A previously shared image included a complete Gemini API key. **Revoke that exposed key** in Google AI Studio and make a fresh key. Never share screenshots showing keys and never commit them to GitHub.
 
 ## Files
-- `server.py`: provider routing and Ollama API bridge
-- `public/index.html`, `style.css`, `app.js`: web interface
-- `START_TEJA_AI.bat`: Windows launcher
-- `public/teja-icon.png`: your wolf logo
+- `server.py` — local server, model integration, and persistent history
+- `public/app.js` — history, voice, chat, provider choices
+- `public/index.html` — controls
+- `public/style.css` — animated/glowing wolf interface
+- `START_TEJA_AI.bat` — Windows launcher
 
-## Official sources
-- Ollama Windows installer: https://ollama.com/download/windows
-- Qwen 2.5 model page: https://ollama.com/library/qwen2.5
-- Ollama API: https://docs.ollama.com/api/chat
+
+## Developer / Creator
+**VIVEK SAHU** is shown prominently in the sidebar, welcome section and footer. This is a branding-only update from v2.5; all previous voice, Ollama and history features remain unchanged. Chat history is stored outside the project folder under the user data directory.
+
+
+---
+
+## Website preview (GitHub Pages)
+
+This repository includes a **sample-only** interactive GitHub Pages preview at `https://viveksahu1974.github.io/TEJA-AI/` once GitHub Pages is enabled and the deployment succeeds. It demonstrates the UI, sample replies, history stored in the browser and browser voice where supported. **This link is not guaranteed live until deployment is verified.** The demo **does not** call a real AI model or expose API keys.
+
+To enable: repository **Settings → Pages → Source: GitHub Actions**, then Actions → **Deploy TEJA Preview to Pages** → **Run workflow**.
+
+For full chat, voice through `edge-tts`, and persistent on-device SQLite history, use the Windows launcher and Python server as described above. The existing local server is **not suitable as an unauthenticated public multi-user service**: history endpoints are not separated per person. Do not put it on a public URL with private API keys unless you add authentication, per-user storage and rate limiting.

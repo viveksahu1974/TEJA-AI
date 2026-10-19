@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title TEJA AI Launcher v2.0
+title TEJA AI Launcher v2.5
 cd /d "%~dp0"
 where py >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
@@ -17,7 +17,7 @@ if %ERRORLEVEL% EQU 0 (
   )
 )
 echo =============================================
-echo Starting TEJA AI v2.0 local server...
+echo Starting TEJA AI v2.5 local server...
 echo If no API keys are set, TEJA will open in Demo Mode.
 echo To connect ChatGPT/Gemini/Claude/DeepSeek, read README.md.
 echo =============================================

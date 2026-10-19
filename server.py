@@ -2,12 +2,15 @@
 Offline AI through a local Ollama service, with optional cloud APIs.
 """
 import ast
+import asyncio
+import importlib.util
 import base64
 import json
 import mimetypes
 import os
 import re
 import time
+import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +20,143 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent / 'public'
 HOST = os.getenv('HOST', '127.0.0.1')
 PORT = int(os.getenv('PORT', '8000'))
+# Saved outside the ZIP/project so replacing the TEJA AI folder does not delete chats.
+DATA_HOME = Path(os.getenv('LOCALAPPDATA') or os.getenv('XDG_DATA_HOME') or (Path.home() / '.local' / 'share')) / 'TEJA-AI'
+HISTORY_DB = DATA_HOME / 'history.sqlite3'
+
+# Multilingual neural voices, used only when optional `edge-tts` is installed.
+# This engine requires Internet access. The browser/Windows engine remains available.
+MULTILINGUAL_VOICES = {
+    'hi-IN': ('hi-IN-SwaraNeural', 'hi-IN-MadhurNeural'),
+    'en-IN': ('en-IN-NeerjaNeural', 'en-IN-PrabhatNeural'),
+    'en-US': ('en-US-JennyNeural', 'en-US-GuyNeural'),
+    'bn-IN': ('bn-IN-TanishaaNeural', 'bn-IN-BashkarNeural'),
+    'ta-IN': ('ta-IN-PallaviNeural', 'ta-IN-ValluvarNeural'),
+    'te-IN': ('te-IN-ShrutiNeural', 'te-IN-MohanNeural'),
+    'mr-IN': ('mr-IN-AarohiNeural', 'mr-IN-ManoharNeural'),
+    'gu-IN': ('gu-IN-DhwaniNeural', 'gu-IN-NiranjanNeural'),
+    'kn-IN': ('kn-IN-SapnaNeural', 'kn-IN-GaganNeural'),
+    'ml-IN': ('ml-IN-SobhanaNeural', 'ml-IN-MidhunNeural'),
+    'pa-IN': ('pa-IN-VaaniNeural', 'pa-IN-OjasNeural'),
+    'ur-PK': ('ur-PK-UzmaNeural', 'ur-PK-AsadNeural'),
+    'or-IN': ('or-IN-SubhasiniNeural', 'or-IN-SukantNeural'),
+    'ne-NP': ('ne-NP-HemkalaNeural', 'ne-NP-SagarNeural'),
+    'ar-SA': ('ar-SA-ZariyahNeural', 'ar-SA-HamedNeural'),
+    'es-ES': ('es-ES-ElviraNeural', 'es-ES-AlvaroNeural'),
+    'fr-FR': ('fr-FR-DeniseNeural', 'fr-FR-HenriNeural'),
+    'de-DE': ('de-DE-KatjaNeural', 'de-DE-ConradNeural'),
+    'pt-BR': ('pt-BR-FranciscaNeural', 'pt-BR-AntonioNeural'),
+    'ja-JP': ('ja-JP-NanamiNeural', 'ja-JP-KeitaNeural'),
+    'ko-KR': ('ko-KR-SunHiNeural', 'ko-KR-InJoonNeural'),
+    'zh-CN': ('zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural'),
+    'ru-RU': ('ru-RU-SvetlanaNeural', 'ru-RU-DmitryNeural'),
+}
+
+def has_online_tts():
+    return importlib.util.find_spec('edge_tts') is not None
+
+
+def synthesize_multilingual_audio(text, language='hi-IN', speed=1.0, speaker='female'):
+    """Generate short MP3 in memory. Network needed, never writes text/audio to disk."""
+    if not isinstance(text, str) or not text.strip() or len(text) > 1800:
+        raise ValueError('Voice text must be 1–1800 characters.')
+    if language not in MULTILINGUAL_VOICES:
+        raise ValueError('Choose a supported language in the TEJA voice toolbar.')
+    if speaker not in ('female', 'male'):
+        raise ValueError('Invalid voice selection.')
+    if not isinstance(speed, (int, float)) or not 0.7 <= speed <= 1.4:
+        raise ValueError('Invalid voice speed.')
+    if not has_online_tts():
+        raise RuntimeError('Online voice package missing. Run INSTALL_MULTILINGUAL_VOICE.bat in the teja-ai folder, then restart TEJA AI.')
+    import edge_tts
+    voice = MULTILINGUAL_VOICES[language][0 if speaker=='female' else 1]
+    change = int(round((speed-1.0)*100))
+    rate = f'{change:+d}%'
+
+    async def generate():
+        frames = bytearray()
+        communication = edge_tts.Communicate(text, voice=voice, rate=rate)
+        async for chunk in communication.stream():
+            if chunk.get('type') == 'audio':
+                frames.extend(chunk.get('data', b''))
+                if len(frames) > 8_000_000:
+                    raise RuntimeError('Generated audio is too large.')
+        if not frames:
+            raise RuntimeError('Speech service produced no audio.')
+        return bytes(frames)
+    return asyncio.run(asyncio.wait_for(generate(), timeout=55))
+
+
+
+def db_connect():
+    DATA_HOME.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(HISTORY_DB, timeout=8)
+    db.execute('CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, data TEXT NOT NULL)')
+    return db
+
+
+def normalize_chat(chat):
+    if not isinstance(chat, dict):
+        raise ValueError('Invalid chat')
+    chat_id = chat.get('id')
+    if not isinstance(chat_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', chat_id):
+        raise ValueError('Invalid chat identifier')
+    messages = chat.get('messages', [])
+    if not isinstance(messages, list) or len(messages) > 80:
+        raise ValueError('Too many chat messages')
+    clean_messages = []
+    for m in messages:
+        if not isinstance(m, dict) or m.get('role') not in ('user', 'assistant') or not isinstance(m.get('content'), str):
+            raise ValueError('Invalid chat message')
+        clean_messages.append({
+            'role': m['role'],
+            'content': m['content'][:25000],
+            'meta': str(m.get('meta', ''))[:400],
+        })
+    updated_at = chat.get('updatedAt', 0)
+    if not isinstance(updated_at, (float, int)) or not (0 < updated_at < 99999999999999):
+        updated_at = int(time.time() * 1000)
+    return {
+        'id': chat_id,
+        'title': str(chat.get('title', 'Conversation'))[:100] or 'Conversation',
+        'mode': str(chat.get('mode', 'teja'))[:40],
+        'provider': str(chat.get('provider', 'teja'))[:40],
+        'updatedAt': int(updated_at),
+        'messages': clean_messages,
+    }
+
+
+def load_chats():
+    with db_connect() as db:
+        rows = db.execute('SELECT data FROM chats ORDER BY updated_at DESC LIMIT 80').fetchall()
+    return [json.loads(row[0]) for row in rows]
+
+
+def persist_chat(chat):
+    chat = normalize_chat(chat)
+    with db_connect() as db:
+        existing = db.execute('SELECT updated_at FROM chats WHERE id=?', (chat['id'],)).fetchone()
+        if existing and int(existing[0]) > chat['updatedAt']:
+            return {'ok': True, 'ignored': 'older version'}
+        db.execute('INSERT INTO chats(id, updated_at, data) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, data=excluded.data',
+                   (chat['id'], chat['updatedAt'], json.dumps(chat, ensure_ascii=False)))
+        db.execute('DELETE FROM chats WHERE id NOT IN (SELECT id FROM chats ORDER BY updated_at DESC LIMIT 80)')
+    return {'ok': True}
+
+
+def delete_chat(chat_id):
+    if not isinstance(chat_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', chat_id):
+        raise ValueError('Invalid chat identifier')
+    with db_connect() as db:
+        db.execute('DELETE FROM chats WHERE id=?', (chat_id,))
+    return {'ok': True}
+
+
+def clear_chats():
+    with db_connect() as db:
+        db.execute('DELETE FROM chats')
+    return {'ok': True}
+
 
 PROVIDERS = {
     'ollama': {
@@ -501,11 +641,31 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?', 1)[0]
+        if path == '/api/history':
+            try:
+                return self.json_out({'chats': load_chats(), 'storage': 'device'})
+            except (OSError, sqlite3.Error):
+                return self.json_out({'error': 'Cannot read chat history on this device.'}, 500)
+        if path == '/api/history/export':
+            try:
+                body = json.dumps({'format': 'teja-ai-history-v1', 'chats': load_chats()}, ensure_ascii=False, indent=2).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Disposition', 'attachment; filename=teja-ai-history.json')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except (OSError, sqlite3.Error):
+                return self.json_out({'error': 'Cannot export history.'}, 500)
         if path == '/api/status':
             return self.json_out({
                 'connected': any(provider_ready(name) for name in PROVIDERS),
                 'providers': all_provider_status(),
                 'google_search': bool(os.getenv('GOOGLE_CSE_API_KEY', '').strip() and os.getenv('GOOGLE_CSE_CX', '').strip()),
+                'tts_online_installed': has_online_tts(),
+                'tts_online_languages': list(MULTILINGUAL_VOICES),
             })
         if path == '/':
             path = '/index.html'
@@ -519,7 +679,53 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def audio_out(self, data):
+        self.send_response(200)
+        self.send_header('Content-Type', 'audio/mpeg')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_POST(self):
+        # Reject cross-site writes to this local server.
+        origin = self.headers.get('Origin', '')
+        if origin and origin not in (f'http://127.0.0.1:{PORT}', f'http://localhost:{PORT}'):
+            return self.json_out({'error': 'Cross-origin requests are not permitted'}, 403)
+        if self.path == '/api/tts':
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if length < 2 or length > 18000:
+                    return self.json_out({'error': 'Voice request too long.'}, 413)
+                data = json.loads(self.rfile.read(length))
+                if not isinstance(data, dict):
+                    return self.json_out({'error': 'Invalid voice request'}, 400)
+                audio = synthesize_multilingual_audio(data.get('text'), data.get('language', 'hi-IN'), data.get('speed', 1), data.get('speaker', 'female'))
+                return self.audio_out(audio)
+            except (ValueError, TypeError):
+                return self.json_out({'error': 'Choose a supported language and text shorter than 1800 characters.'}, 400)
+            except RuntimeError as exc:
+                return self.json_out({'error': str(exc)[:450]}, 503)
+            except Exception:
+                # Do not expose URLs, headers, credentials or full exception details in UI.
+                return self.json_out({'error': 'Online multilingual voice unavailable. Check internet access, the edge-tts installation, then retry. You can switch to Windows/browser voice meanwhile.'}, 502)
+        if self.path in ('/api/history', '/api/history/delete', '/api/history/clear'):
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if length < 2 or length > 2_500_000:
+                    return self.json_out({'error': 'Invalid history request size'}, 413)
+                data = json.loads(self.rfile.read(length))
+                if self.path == '/api/history':
+                    result = persist_chat(data.get('chat'))
+                elif self.path == '/api/history/delete':
+                    result = delete_chat(data.get('id'))
+                else:
+                    result = clear_chats()
+                return self.json_out(result)
+            except (ValueError, TypeError):
+                return self.json_out({'error': 'Invalid history data'}, 400)
+            except (OSError, sqlite3.Error):
+                return self.json_out({'error': 'Could not save history on this device.'}, 500)
         if self.path != '/api/chat':
             return self.json_out({'error': 'Not found'}, 404)
         length = int(self.headers.get('Content-Length', '0'))
@@ -545,6 +751,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     live = [cfg['label'] for name, cfg in PROVIDERS.items() if provider_ready(name)]
-    print(f'TEJA AI v2.2 running at http://{HOST}:{PORT}', flush=True)
+    print(f'TEJA AI v2.5 running at http://{HOST}:{PORT}', flush=True)
     print('Connected providers: ' + (', '.join(live) if live else 'Demo only (Ollama not ready)'), flush=True)
+    print('Online multilingual voice: ' + ('installed' if has_online_tts() else 'not installed (run INSTALL_MULTILINGUAL_VOICE.bat)'), flush=True)
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
