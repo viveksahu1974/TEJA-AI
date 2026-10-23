@@ -1,3 +1,34 @@
+# TEJA AI v2.9 — Training Studio + Starter Training Pack 🐺
+
+**Developed by VIVEK SAHU**
+
+This repository includes a **voice + text Training Studio** and a starter behavior pack with 17 rules. It builds on the original TEJA AI local/Ollama assistant with multilingual speech and device-stored chat history.
+
+## Launch on Windows
+
+1. Install Python 3.11 or newer and [Ollama](https://ollama.com/download/windows).
+2. In PowerShell run `ollama pull qwen2.5:3b` (model download required once).
+3. Double-click `START_TEJA_AI.bat`; keep the server terminal open.
+4. Open `http://127.0.0.1:8000/` and click **🧠 Training Studio — Voice + Text** under New conversation.
+5. Starter rules are automatically installed on first server start. Review, edit, disable or delete them. **Speak a rule using 🎙 Dictate** or type it and click **💾 Save Training**.
+6. Ask TEJA `hello`, `who created teja ai`, or any study/coding question to try the rules.
+
+If port 8000 is already in use, close older TEJA servers or launch from PowerShell in this folder with `$env:PORT="8001"; py server.py`, then browse to port 8001.
+
+## Training behavior
+
+* Rules are saved under `%LOCALAPPDATA%\TEJA-AI\training.sqlite3` on Windows, outside the repository. Old personal greetings and matching corrections are preserved when bundled starter rules install.
+* Six types: speaking instructions, preferred phrases, avoided phrases, replacements, exact corrected answers and custom greetings.
+* Existing rules remain after updating the code. A deleted bundled rule does not reappear on every restart.
+* This is **persistent prompt personalization**, not retraining or fine-tuning Ollama weights.
+* The AI can still make mistakes. Do not ask it to store passwords or API keys. Training prompts for cloud providers may be sent with chat requests.
+* For local generation, Ollama must be running. Hindi online TTS is separate and needs `edge-tts` and internet, with text sent to the speech provider.
+* This localhost application has no user authentication: **do not expose the local server publicly.**
+
+**Files added:** `default_training.json`, `public/training.js`, `public/training.css`. The existing voice/chat interface is preserved.
+
+---
+
 # TEJA AI v2.5 — Hindi & multilingual speaking fix
 
 The v2.4 Windows/Edge browser speech engine may pronounce English but fail for Hindi and other Indian languages. v2.5 adds an **optional independent online multilingual speech engine** using the Python `edge-tts` package. Your chat model can still run locally on Ollama, but **text being read aloud is sent to an external online speech service** when this engine is selected. It is not an offline voice solution and its availability depends on the service and network.
