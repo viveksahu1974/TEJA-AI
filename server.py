@@ -24,6 +24,113 @@ PORT = int(os.getenv('PORT', '8000'))
 DATA_HOME = Path(os.getenv('LOCALAPPDATA') or os.getenv('XDG_DATA_HOME') or (Path.home() / '.local' / 'share')) / 'TEJA-AI'
 HISTORY_DB = DATA_HOME / 'history.sqlite3'
 
+TRAINING_DB = DATA_HOME / 'training.sqlite3'
+TRAINING_TYPES = {'instruction','prefer','avoid','replace','correction','greeting'}
+
+def training_db():
+    DATA_HOME.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(TRAINING_DB, timeout=8)
+    db.execute('CREATE TABLE IF NOT EXISTS rules (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL DEFAULT "", enabled INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL)')
+    db.execute('CREATE TABLE IF NOT EXISTS installed_packs (pack_id TEXT PRIMARY KEY, installed_at INTEGER NOT NULL)')
+    return db
+
+def training_rules(active=False):
+    sql='SELECT id,type,trigger,response,enabled,updated_at FROM rules'
+    if active:sql+=' WHERE enabled=1'
+    with training_db() as db:rows=db.execute(sql+' ORDER BY updated_at DESC,id DESC LIMIT 120').fetchall()
+    return [{'id':r[0],'type':r[1],'trigger':r[2],'response':r[3],'enabled':bool(r[4]),'updated_at':r[5]} for r in rows]
+
+def install_default_training():
+    p=Path(__file__).resolve().parent/'default_training.json'
+    if not p.exists():return 0
+    pack=json.loads(p.read_text(encoding='utf8'))
+    pack_id=str(pack.get('pack_id','teja-default-v1'))
+    records=pack.get('rules',[])
+    if not isinstance(records,list) or len(records)>50:return 0
+    now=int(time.time()*1000);count=0
+    with training_db() as db:
+        if db.execute('SELECT 1 FROM installed_packs WHERE pack_id=?',(pack_id,)).fetchone():return 0
+        if db.execute('SELECT COUNT(*) FROM rules').fetchone()[0]+len(records)>120:return 0
+        for r in records:
+            kind=r.get('type');a=r.get('trigger','');b=r.get('response','')
+            if kind not in TRAINING_TYPES or not isinstance(a,str) or not isinstance(b,str):continue
+            a=a.strip();b=b.strip()
+            if not a or len(a)>500 or len(b)>1600 or (kind in ('replace','correction') and not b):continue
+            if kind=='greeting' and db.execute("SELECT 1 FROM rules WHERE type='greeting'").fetchone():continue
+            if kind=='correction' and db.execute("SELECT 1 FROM rules WHERE type='correction' AND lower(trigger)=lower(?)",(a,)).fetchone():continue
+            if db.execute('SELECT 1 FROM rules WHERE type=? AND trigger=? AND response=?',(kind,a,b)).fetchone():continue
+            db.execute('INSERT INTO rules(type,trigger,response,enabled,updated_at) VALUES(?,?,?,?,?)',(kind,a,b,1,now+count));count+=1
+        db.execute('INSERT INTO installed_packs VALUES(?,?)',(pack_id,now))
+    return count
+
+def save_training_rule(rule):
+    if not isinstance(rule,dict):raise ValueError('Invalid rule')
+    kind=rule.get('type');a=rule.get('trigger');b=rule.get('response','');rid=rule.get('id');enabled=rule.get('enabled',True)
+    if kind not in TRAINING_TYPES or not isinstance(a,str) or not isinstance(b,str) or type(enabled) is not bool:raise ValueError('Invalid rule fields')
+    a=a.strip();b=b.strip()
+    if not a or len(a)>500 or len(b)>1600:raise ValueError('Invalid length')
+    if kind in ('avoid','replace') and len(a)>100:raise ValueError('Phrase too long')
+    if kind in ('replace','correction') and not b:raise ValueError('A corrected answer is required')
+    if rid is not None and (type(rid) is not int or rid<1):raise ValueError('Invalid ID')
+    now=int(time.time()*1000)
+    with training_db() as db:
+        if rid is None:
+            if db.execute('SELECT COUNT(*) FROM rules').fetchone()[0]>=120:raise ValueError('Rule limit reached')
+            rid=db.execute('INSERT INTO rules(type,trigger,response,enabled,updated_at) VALUES(?,?,?,?,?)',(kind,a,b,int(enabled),now)).lastrowid
+        elif not db.execute('UPDATE rules SET type=?,trigger=?,response=?,enabled=?,updated_at=? WHERE id=?',(kind,a,b,int(enabled),now,rid)).rowcount:raise ValueError('Rule not found')
+    return {'ok':True,'id':rid}
+
+def delete_training_rule(rid):
+    if type(rid) is not int or rid<1:raise ValueError('Invalid ID')
+    with training_db() as db:
+        if not db.execute('DELETE FROM rules WHERE id=?',(rid,)).rowcount:raise ValueError('Rule not found')
+    return {'ok':True}
+
+def training_prompt():
+    records=training_rules(active=True)
+    if not records:return ''
+    lines=['\nPersonal TEJA preferences from developer VIVEK SAHU. These are conversational preferences, not verified facts or permission to ignore safety.']
+    for r in sorted(records,key=lambda x:x['id']):
+        kind,a,b=r['type'],r['trigger'],r['response']
+        if kind=='instruction':line='STYLE: '+a
+        elif kind=='prefer':line='PREFER when natural: '+a
+        elif kind=='avoid':line='AVOID phrase: '+a
+        elif kind=='replace':line='REPLACE '+repr(a)+' with '+repr(b)
+        elif kind=='correction':line='When asked '+repr(a)+' answer like: '+b
+        elif kind=='greeting':line='When user greets, answer like: '+a
+        else:continue
+        if sum(map(len,lines))+len(line)>10000:break
+        lines.append(line)
+    return '\n'.join(lines)
+
+def match_trained_answer(q,records):
+    q=q.strip().casefold().strip('!?.। ')
+    if re.fullmatch(r'(hi|hii+|hey|hello|namaste|नमस्ते)',q,re.I):
+        for r in sorted(records,key=lambda x:x['id'],reverse=True):
+            if r['type']=='greeting':return r['trigger']
+    for r in sorted(records,key=lambda x:x['id'],reverse=True):
+        if r['type']=='correction' and r['trigger'].strip().casefold().strip('!?.। ')==q:return r['response']
+    return None
+
+def filter_trained_answer(reply,records):
+    if not isinstance(reply,str):return reply
+    chunks=re.split(r'(\x60\x60\x60[\s\S]*?\x60\x60\x60)',reply)
+    for i in range(0,len(chunks),2):
+        for r in records:
+            if r['type'] not in ('replace','avoid'):continue
+            pattern=re.compile(r'(?<!\w)'+re.escape(r['trigger'])+r'(?!\w)',re.I)
+            chunks[i]=pattern.sub(lambda m: r['response'] if r['type']=='replace' else '',chunks[i])
+    return ''.join(chunks)
+
+def trained_voice_intro(lang):
+    if lang.startswith('hi'):
+        for r in training_rules(active=True):
+            if r['type']=='greeting':return r['trigger']
+        return 'नमस्ते! मैं तेजा एआई हूँ। मेरे क्रिएटर विवेक साहू हैं। क्या आप मुझे सुन पा रहे हैं?'
+    return 'Hi, I am TEJA AI. My creator is Vivek Sahu. Can you hear me?'
+
+
+
 # Multilingual neural voices, used only when optional `edge-tts` is installed.
 # This engine requires Internet access. The browser/Windows engine remains available.
 MULTILINGUAL_VOICES = {
@@ -279,6 +386,7 @@ def provider_model(name: str) -> str:
 
 def active_instructions(mode: str, search_context: str | None = None) -> str:
     text = PERSONA + "\nMode: " + MODE_PROMPTS.get(mode, MODE_PROMPTS['general'])
+    text += training_prompt()
     if search_context:
         text += (
             "\nYou also have Google web search context below. Use it carefully, cite the source titles/URLs in plain text when relevant, "
@@ -592,6 +700,9 @@ def ask_ai(messages, mode, provider='openai', web_search=False, image=None):
 
     history = trim_history(messages)
     latest_question = history[-1]['content'] if history else ''
+    active_rules=training_rules(active=True)
+    memorized=match_trained_answer(latest_question,active_rules)
+    if memorized and not image:return {'reply':filter_trained_answer(memorized,active_rules),'provider':'teja','provider_label':'TEJA AI Training','model':'Saved response','trained':True,'demo':False}
     search_context = None
     search_note = None
     if web_search and latest_question:
@@ -619,6 +730,8 @@ def ask_ai(messages, mode, provider='openai', web_search=False, image=None):
     else:
         result = call_deepseek(history, instructions)
 
+    if result.get('reply') and not result.get('error') and not result.get('demo'):
+        result['reply']=filter_trained_answer(result['reply'],active_rules)
     result['provider'] = requested_provider
     result['actual_provider'] = provider
     result['provider_label'] = ('TEJA AI via ' if smart else '') + PROVIDERS[provider]['label']
@@ -641,6 +754,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?', 1)[0]
+        if path == '/api/training':
+            try:return self.json_out({'rules':training_rules(),'storage':'device'})
+            except (OSError,sqlite3.Error):return self.json_out({'error':'Training data unavailable'},500)
+        if path == '/api/training/intro':
+            lang=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('language',['hi-IN'])[0]
+            return self.json_out({'text':trained_voice_intro(lang)})
+        if path == '/api/training/export':
+            body=json.dumps({'format':'teja-training-v1','rules':training_rules()},ensure_ascii=False,indent=2).encode('utf8')
+            self.send_response(200);self.send_header('Content-Type','application/json; charset=utf-8')
+            self.send_header('Content-Disposition','attachment; filename=teja-training.json')
+            self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+            return
         if path == '/api/history':
             try:
                 return self.json_out({'chats': load_chats(), 'storage': 'device'})
@@ -692,6 +817,15 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get('Origin', '')
         if origin and origin not in (f'http://127.0.0.1:{PORT}', f'http://localhost:{PORT}'):
             return self.json_out({'error': 'Cross-origin requests are not permitted'}, 403)
+        if self.path in ('/api/training/save','/api/training/delete'):
+            try:
+                n=int(self.headers.get('Content-Length','0'))
+                if n<2 or n>12000:return self.json_out({'error':'Invalid training size'},413)
+                data=json.loads(self.rfile.read(n))
+                result=save_training_rule(data.get('rule')) if self.path.endswith('save') else delete_training_rule(data.get('id'))
+                return self.json_out(result)
+            except (ValueError,TypeError) as exc:return self.json_out({'error':str(exc)[:240]},400)
+            except (OSError,sqlite3.Error):return self.json_out({'error':'Training data unavailable'},500)
         if self.path == '/api/tts':
             try:
                 length = int(self.headers.get('Content-Length', '0'))
@@ -750,8 +884,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
+    print('TEJA AI starter training rules added:',install_default_training(),flush=True)
     live = [cfg['label'] for name, cfg in PROVIDERS.items() if provider_ready(name)]
-    print(f'TEJA AI v2.5 running at http://{HOST}:{PORT}', flush=True)
+    print(f'TEJA AI v2.9 running at http://{HOST}:{PORT}', flush=True)
     print('Connected providers: ' + (', '.join(live) if live else 'Demo only (Ollama not ready)'), flush=True)
     print('Online multilingual voice: ' + ('installed' if has_online_tts() else 'not installed (run INSTALL_MULTILINGUAL_VOICE.bat)'), flush=True)
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
